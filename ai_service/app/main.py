@@ -13,7 +13,7 @@ load_dotenv()
 
 app = FastAPI(
     title="EmoSense AI Microservice",
-    description="Facial Emotion Recognition microservice powered by Groq Cloud Vision AI",
+    description="Facial Emotion Recognition microservice powered by Hugging Face Vision AI",
     version="2.0.0"
 )
 
@@ -38,7 +38,7 @@ class EmotionPredictionResponse(BaseModel):
 @app.get("/")
 def root():
     return {
-        "service": "EmoSense AI Microservice (Groq Vision)",
+        "service": "EmoSense AI Microservice (Hugging Face Vision)",
         "status": "online",
         "endpoints": {
             "health": "/health",
@@ -46,17 +46,15 @@ def root():
             "predict_frame": "/predict_frame",
             "predict_image": "/predict_image"
         },
-        "model": "llama-3.2-11b-vision-preview"
+        "model": "trpakov/vit-face-expression"
     }
 
 @app.get("/health")
 def health_check():
-    has_key = bool(os.environ.get("GROQ_API_KEY"))
     return {
         "status": "ok",
         "service": "EmoSense AI Microservice",
-        "engine": "Groq Cloud Vision",
-        "groq_api_key_configured": has_key,
+        "engine": "Hugging Face Vision",
         "labels": EMOTION_LABELS
     }
 

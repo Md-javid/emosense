@@ -1,241 +1,162 @@
-<div align="center">
+# EmoSense - Full-Stack AI-Powered Facial Emotion Recognition System
 
-# ⚡ EmoSense AI
-### Next-Generation Real-Time Facial Emotion Recognition & Affective Telemetry Platform
+**EmoSense** is a full-stack, real-time emotion recognition application capable of classifying 7 core facial emotions (*angry, disgust, fear, happy, neutral, sad, surprise*) from live webcam video streams and uploaded images.
 
-[![Vercel](https://img.shields.io/badge/Frontend-Vercel-black?style=for-the-badge&logo=vercel)](https://emosense-beta.vercel.app)
-[![Render](https://img.shields.io/badge/Backend-Render-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://emosense-esz2.onrender.com)
-[![FastAPI](https://img.shields.io/badge/AI_Microservice-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](https://emosense-ai-service.onrender.com)
-[![Groq](https://img.shields.io/badge/Vision_Engine-Groq_Cloud_Qwen_27B-F05032?style=for-the-badge&logo=groq&logoColor=white)](https://groq.com)
-[![License](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](LICENSE)
-
-<br />
-
-**[🚀 Live Demo](https://emosense-beta.vercel.app)** • **[📖 Documentation](#-system-architecture)** • **[✨ Key Features](#-key-features)** • **[🛠️ Quick Start](#-quick-start--local-development)** • **[🌐 API Endpoints](#-api-reference)**
-
-<br />
-
-```
-  😀 Happy  •  😢 Sad  •  😠 Angry  •  😲 Surprise  •  😨 Fear  •  🤢 Disgust  •  😐 Neutral
-```
-
-</div>
+It provides domain-specific analytical views tailored for **Education**, **Healthcare**, and **Customer Experience**, powered by a Python FastAPI deep learning microservice, Node.js + Express backend, MongoDB, Socket.io, and a React (Vite) frontend. The AI engine runs entirely locally using Hugging Face's `transformers` library for robust, private emotion classification.
 
 ---
 
-## 🌟 Overview
-
-**EmoSense** is a full-stack, enterprise-grade **Affective Computing & Facial Emotion Recognition (FER)** system. It continuously captures and analyzes human micro-expressions in real time via live webcam video streams and static high-resolution portrait uploads.
-
-Grounded in **Paul Ekman's Facial Action Coding System (FACS)** and **James Russell's Circumplex Model of Affect (Valence & Arousal)**, EmoSense extracts fine-grained facial Action Units (e.g., AU1 Inner Brow Raiser, AU4 Brow Lowerer, AU12 Lip Corner Puller) to distinguish genuine smiles from angry grimaces and translate facial morphology into actionable psychological insights.
-
-### 🌐 Live Production Links
-| Service | Environment | URL |
-| :--- | :--- | :--- |
-| **Frontend Web App** | Vercel | [https://emosense-beta.vercel.app](https://emosense-beta.vercel.app) |
-| **REST & WebSocket API** | Render | [https://emosense-esz2.onrender.com](https://emosense-esz2.onrender.com) |
-| **AI Inference Microservice** | Render | [https://emosense-ai-service.onrender.com](https://emosense-ai-service.onrender.com) |
-
----
-
-## 📊 System Architecture
+## System Architecture
 
 ```
-                                  ┌───────────────────────────────────────────────┐
-                                  │             React 18 + Vite Frontend          │
-                                  │      (Webcam Stream / Canvas / Recharts / UI) │
-                                  └───────────────┬───────────────────────────────┘
-                                                  │
-                                 WebSocket (Socket.io) / HTTPS REST
-                                                  │
-                                                  ▼
-                                  ┌───────────────────────────────────────────────┐
-                                  │         Node.js + Express Backend             │
-                                  │   (JWT Auth, Sessions, Real-Time Broker)      │
-                                  └───────────────┬──────────────────────┬────────┘
-                                                  │                      │
-                                     Axios IPC    │                      │  Mongoose ODM
-                                                  ▼                      ▼
-                    ┌──────────────────────────────────────────┐   ┌───────────────────────────┐
-                    │      Python FastAPI AI Microservice      │   │      MongoDB Database     │
-                    │  ┌────────────────────────────────────┐  │   │  (Users, Sessions, Logs)  │
-                    │  │ Multi-Stage Face & Landmark Engine │  │   └───────────────────────────┘
-                    │  │ (CLAHE + Cascades + YCrCb Skin)    │  │
-                    │  └──────────────────┬─────────────────┘  │
-                    │                     │ Fallback / Upload  │
-                    │                     ▼                    │
-                    │  ┌────────────────────────────────────┐  │
-                    │  │   Groq Multimodal Vision (Qwen)    │  │
-                    │  │   + Gemini 1.5 & GPT-4o Routers    │  │
-                    │  └────────────────────────────────────┘  │
-                    └──────────────────────────────────────────┘
+ ┌─────────────────────────────────────────────────────────────┐
+ │                React (Vite + TS + Tailwind)                 │
+ │            Webcam (MediaDevices), Canvas HUD, Recharts      │
+ └───────────────┬─────────────────────────────┬───────────────┘
+                 │ HTTP REST                   │ WebSockets (Socket.io)
+                 ▼                             ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │             Node.js + Express + TypeScript Backend          │
+ │            Auth, Session Manager, Emotion Routes            │
+ └───────────────┬─────────────────────────────┬───────────────┘
+                 │ Mongoose                    │ Axios HTTP
+                 ▼                             ▼
+ ┌─────────────────────────────┐  ┌────────────────────────────┐
+ │      MongoDB Database       │  │  Python FastAPI Microservice│
+ │ (Users, Sessions, Logs)     │  │  OpenCV + Hugging Face AI  │
+ └─────────────────────────────┘  └────────────────────────────┘
 ```
 
 ---
 
-## ✨ Key Features
+## Directory Structure
 
-### 1. 🎥 Real-Time Live Webcam Telemetry (`/live`)
-- **Zero-Latency Stream**: Streams 480x360 frames over low-overhead WebSockets at 30+ FPS.
-- **Robust Multi-Stage Face Tracking**: Features contrast-limited adaptive histogram equalization (CLAHE), multi-cascade face ensembles (`alt2`, `default`, `alt`, `profile`), and YCrCb chrominance segmentation that tracks faces under dim lighting and varied head poses.
-- **Live Facial HUD**: Real-time bounding box, dynamic confidence gauges, and a rolling 30-second emotion telemetry line graph.
-
-### 2. 🖼️ Multi-Engine Static Image Analysis (`/upload`)
-- **Deep Multimodal Vision**: Powered by Groq Cloud Qwen 27B Vision, Google Gemini 1.5 Flash, and OpenAI GPT-4o.
-- **Ekman FACS Deconstruction**: Detects subtle micro-cues (lip curvature, brow tension, eye aperture).
-- **Interactive Radar Chart**: 7-class polygon visualization with instant Action Unit explanations.
-
-### 3. 🧠 Domain-Specific Affective Portals
-- 🎓 **Education Hub (`/student-hub`)**: Tracks cognitive engagement, attention index, and triggers proactive comprehension interventions when confusion or frustration is detected.
-- 🩺 **Healthcare & Clinical Portal**: Longitudinal mood trajectory analyzer, tracking emotional valence (-1.0 to +1.0) and autonomic arousal (0.0 to 1.0) across therapy sessions.
-- 🎧 **Customer Success Dashboard**: Real-time CSAT satisfaction forecasting and automated escalation de-escalation recommendations.
-
-### 4. 🤖 AI Psychological Co-Pilot (`/explain`)
-- Instant natural language breakdown of observed facial landmarks, affective valence, and suggested behavioral responses based on context.
+```
+.
+├── frontend/             # React + Vite + TypeScript + Tailwind CSS
+├── backend/              # Node.js + Express + TypeScript + Socket.io + Mongoose
+├── ai_service/           # Python FastAPI microservice (OpenCV + Hugging Face pipeline)
+├── docker-compose.yml    # Multi-container orchestrator
+└── README.md
+```
 
 ---
 
-## 🛠️ Tech Stack
-
-| Domain | Technologies |
-| :--- | :--- |
-| **Frontend** | React 18, TypeScript, Vite, Tailwind CSS, Recharts, Lucide Icons, Socket.io Client, Web Audio API |
-| **Backend API** | Node.js, Express, TypeScript, Socket.io Server, Mongoose, JWT Authentication, Multer |
-| **AI Microservice** | Python 3.10+, FastAPI, Uvicorn, OpenCV (CLAHE, Cascades), NumPy, Groq SDK, Pydantic |
-| **Vision Models** | Groq Cloud Qwen 27B Multimodal, Google Gemini 1.5 Flash, OpenAI GPT-4o-mini |
-| **Database** | MongoDB Atlas / Local MongoDB with Mongoose ODM |
-| **Deployment** | Vercel (Frontend CI/CD), Render (Dockerized Backend & FastAPI Microservice) |
-
----
-
-## 🚀 Quick Start & Local Development
+## Quick Start & Local Execution
 
 ### Prerequisites
-- **Node.js**: v18.0 or higher
-- **Python**: v3.10 or higher
-- **MongoDB**: Local instance running on `mongodb://localhost:27017` or MongoDB Atlas URI
-- **Groq API Key**: Free key from [console.groq.com](https://console.groq.com)
+- Node.js (v18+)
+- Python 3.10+
+- MongoDB (Running locally on `mongodb://localhost:27017` or via Docker)
 
 ---
 
-### Step 1: Clone the Repository
-```bash
-git clone https://github.com/navin24092007-source/emosense.git
-cd emosense
-```
+### 1. Running the AI Microservice (Python FastAPI)
 
----
+The AI service uses Hugging Face models running locally without requiring cloud API keys.
 
-### Step 2: Configure Environment Variables
-
-Create `.env` in `ai_service/`:
-```env
-PORT=8000
-GROQ_API_KEY=your_groq_api_key_here
-```
-
-Create `.env` in `backend/`:
-```env
-PORT=5000
-NODE_ENV=development
-CLIENT_URL=http://localhost:5173
-MONGODB_URI=mongodb://localhost:27017/emosense
-JWT_SECRET=your_super_secret_jwt_key_here
-AI_SERVICE_URL=http://localhost:8000
-GROQ_API_KEY=your_groq_api_key_here
-```
-
-Create `.env` in `frontend/`:
-```env
-VITE_API_URL=http://localhost:5000/api
-VITE_SOCKET_URL=http://localhost:5000
-```
-
----
-
-### Step 3: Start AI Microservice (FastAPI)
 ```bash
 cd ai_service
 
-# Create and activate virtual environment
-python -m venv .venv
-# Windows:
-.venv\Scripts\activate
-# macOS/Linux:
-source .venv/bin/activate
+# Create virtual environment (optional but recommended)
+python -m venv venv
+# On Windows:
+venv\Scripts\activate
+# On Linux/macOS:
+source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Start FastAPI server
-uvicorn app.main:app --reload --port 8000
+# Start FastAPI server on port 8000
+python -m uvicorn app.main:app --reload --port 8000
 ```
-*Health Check: `http://localhost:8000/health`*
+- Health Check: Access `http://localhost:8000/health`
+- Pytest Suite: Run `pytest` inside `ai_service/`
 
 ---
 
-### Step 4: Start Express Backend (Node.js)
+### 2. Running the Express Backend (Node.js + TypeScript)
+
 ```bash
 cd backend
 
 # Install dependencies
 npm install
 
-# Start backend server
+# Build & Run in development mode (port 5000)
 npm run dev
+
+# Run unit/integration tests
+npm test
 ```
-*Health Check: `http://localhost:5000/health`*
 
 ---
 
-### Step 5: Start Frontend (React + Vite)
+### 3. Running the Frontend (React + Vite)
+
 ```bash
 cd frontend
 
 # Install dependencies
 npm install
 
-# Start Vite dev server
+# Start Vite dev server (port 5173)
 npm run dev
 ```
-*Open [http://localhost:5173](http://localhost:5173) in your browser.*
+Open your browser at `http://localhost:5173`.
 
 ---
 
-## 🌐 API Reference
+## Docker Deployment (Docker Compose)
 
-### Emotion Inference Endpoints
-| Method | Endpoint | Description | Auth Required |
-| :--- | :--- | :--- | :---: |
-| `POST` | `/api/emotions/predict-frame` | Evaluates base64 video frame (15ms zero-latency telemetry) | Yes |
-| `POST` | `/api/emotions/predict-image` | Deep multimodal image classification (Multipart Form) | Yes |
-| `POST` | `/api/emotions/explain` | Generates psychological FACS explanation & domain tips | Yes |
-| `POST` | `/api/emotions/chat` | AI Emotion Co-Pilot chatbot assistant | Yes |
+To launch the entire stack (MongoDB, AI Microservice, Backend) simultaneously with Docker:
 
-### Session & Analytics Endpoints
-| Method | Endpoint | Description | Auth Required |
-| :--- | :--- | :--- | :---: |
-| `POST` | `/api/sessions` | Initiates tracking session with domain context | Yes |
-| `POST` | `/api/sessions/:id/end` | Ends session and compiles variability metrics | Yes |
-| `GET` | `/api/sessions` | Retrieves past session history | Yes |
-| `GET` | `/api/emotions/session/:id` | Returns time-series emotion logs for a session | Yes |
+```bash
+docker-compose up --build
+```
+
+Services will be accessible at:
+- **Frontend**: `http://localhost:5173`
+- **Backend API**: `http://localhost:5000`
+- **FastAPI AI Microservice**: `http://localhost:8000`
+- **MongoDB**: `localhost:27017`
 
 ---
 
-## 🔒 Security & Privacy
+## Local AI Model Processing
 
-- **On-Device & Ephemeral Processing**: Webcam frames are evaluated in memory and never permanently stored as raw video on disk.
-- **Granular Log Control**: Users can toggle session logging, anonymize records, or purge historical telemetry at any time from `/profile`.
-- **JWT & Rate Limiting**: Production API routes are protected with stateless JSON Web Tokens and strict Express rate limiters.
-
----
-
-## 📄 License
-
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+The AI microservice is architected to utilize **Hugging Face Transformers** for high-accuracy Facial Emotion Recognition (FER) inference natively on your machine.
+It relies on `trpakov/vit-face-expression` by default to process webcam frames efficiently without depending on external API calls or latency, guaranteeing total data privacy.
 
 ---
 
-<div align="center">
-  <sub>Built with ❤️ by <b>Navin C</b> and the <b>EmoSense Engineering Team</b>.</sub>
-</div>
+## Features & Domain Views
+
+1. **Live Webcam Streaming (`/live`)**:
+   - Captures frame buffers via canvas and streams base64 data over Socket.io every 300ms.
+   - Overlays face bounding box + live emotion badge + confidence score bar.
+   - Real-time 30-second emotion telemetry line chart powered by Recharts.
+
+2. **Upload Image Analysis (`/upload`)**:
+   - Drag and drop static portrait photographs.
+   - Instant 7-class softmax probability breakdown and optional session log save.
+
+3. **Global Dashboard (`/dashboard`)**:
+   - View past session logs with dominant emotion badges, context tags, and duration.
+   - Drill down into specific session time-series charts and variability scores.
+
+4. **Domain Views**:
+   - **Education (`/domain/education`)**: Student engagement index & classroom confusion tracking.
+   - **Healthcare (`/domain/healthcare`)**: Patient longitudinal mood trend analyzer across multiple therapy sessions.
+   - **Customer (`/domain/customer`)**: Call sentiment timeline review with high-frustration segment highlighting.
+
+5. **User Profile & Privacy (`/profile`)**:
+   - Role switcher (`student`, `teacher`, `therapist`, `agent`, `admin`).
+   - Auto-delete session logs setting (e.g., purge logs older than N days).
+
+---
+
+## License & Credits
+
+Built with ❤️ using React, Vite, Tailwind CSS, Node.js, Express, Socket.io, Mongoose, and Python FastAPI + Hugging Face Transformers.
