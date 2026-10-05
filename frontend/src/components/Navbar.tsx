@@ -38,7 +38,7 @@ export const Navbar: React.FC<NavbarProps> = ({
     let isMounted = true;
     const pingServices = async () => {
       try {
-        const backendBase = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/api\/?$/, '');
+        const backendBase = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1' ? 'https://emosense-esz2.onrender.com/api' : 'http://localhost:5000/api')).replace(/\/api\/?$/, '');
         const res = await fetch(`${backendBase}/health`, { method: 'GET' });
         if (res.ok && isMounted) {
           setEngineStatus('ready');
