@@ -8,16 +8,17 @@ import base64
 import numpy as np
 from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
-from groq import Groq
+from PIL import Image
+from transformers import pipeline
 
 # Load environment variables from .env if present
 load_dotenv()
 
 EMOTION_LABELS = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
-PRIMARY_MODEL = "qwen/qwen3.8-27b"
+PRIMARY_MODEL = "trpakov/vit-face-expression"
 
-_client: Optional[Groq] = None
-_last_groq_frame_time: float = 0.0
+_hf_pipeline = None
+_last_hf_frame_time: float = 0.0
 _last_cached_frame_result: Optional[Dict[str, Any]] = None
 
 # Initialize robust Haar Cascades for real-time facial expression telemetry
@@ -26,63 +27,18 @@ _face_cascade_default = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcasca
 _smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
 _eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
 
-def get_groq_client() -> Optional[Groq]:
+def get_hf_pipeline():
     """
-    Lazily initializes and returns the Groq client from environment variables.
+    Lazily initializes and returns the Hugging Face emotion classification pipeline.
     """
-    global _client
-    api_key = os.environ.get("GROQ_API_KEY")
-    if not api_key:
-        return None
-    if _client is None:
-        _client = Groq(api_key=api_key, timeout=10.0)
-    return _client
-
-def encode_bgr_to_base64_jpeg(bgr_image: np.ndarray, quality: int = 75) -> str:
-    """
-    Encodes an OpenCV BGR image matrix into a compact base64 JPEG string.
-    """
-    encode_param = [cv2.IMWRITE_JPEG_QUALITY, quality]
-    success, buffer = cv2.imencode('.jpg', bgr_image, encode_param)
-    if not success:
-        raise ValueError("Failed to encode image to JPEG")
-    return base64.b64encode(buffer).decode('utf-8')
-
-def extract_json_from_llm_output(text: str) -> Dict[str, Any]:
-    """
-    Robustly extracts and parses a JSON object from raw LLM text response.
-    """
-    clean_text = text.strip()
-    
-    if "```" in clean_text:
-        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", clean_text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(1))
-            except Exception:
-                pass
-
-    try:
-        return json.loads(clean_text)
-    except Exception:
-        pass
-
-    start = clean_text.find("{")
-    end = clean_text.rfind("}")
-    if start != -1 and end != -1 and end > start:
+    global _hf_pipeline
+    if _hf_pipeline is None:
         try:
-            return json.loads(clean_text[start:end+1])
-        except Exception:
-            pass
+            _hf_pipeline = pipeline("image-classification", model=PRIMARY_MODEL)
+        except Exception as e:
+            print(f"Error loading model {PRIMARY_MODEL}: {e}")
+    return _hf_pipeline
 
-    lower = clean_text.lower()
-    for emo in EMOTION_LABELS:
-        if emo in lower:
-            probs = {e: 0.01 for e in EMOTION_LABELS}
-            probs[emo] = 0.94
-            return {"emotion": emo, "confidence": 0.94, "all_probs": probs}
-
-    return {"emotion": "neutral", "confidence": 0.85}
 
 def detect_face_bbox(gray: np.ndarray, img_w: int, img_h: int) -> tuple:
     """
@@ -276,10 +232,10 @@ def normalize_emotion_response(
 def predict_emotion(bgr_image: np.ndarray, is_static_upload: bool = False) -> Dict[str, Any]:
     """
     Affective Telemetry Engine:
-    - For Static Uploads: runs Groq Multimodal Vision (Qwen 27B) with Ekman FACS understanding.
-    - For Live Stream: runs adaptive Groq Vision sampling with high-speed geometric fallback.
+    - For Static Uploads: runs Hugging Face Vision classification.
+    - For Live Stream: runs adaptive Hugging Face Vision sampling with high-speed geometric fallback.
     """
-    global _last_groq_frame_time, _last_cached_frame_result
+    global _last_hf_frame_time, _last_cached_frame_result
 
     if bgr_image is None or bgr_image.size == 0:
         return {
@@ -295,57 +251,49 @@ def predict_emotion(bgr_image: np.ndarray, is_static_upload: bool = False) -> Di
     cv_result = analyze_opencv_facial_affect(bgr_image)
     detected_bbox = cv_result["bbox"]
 
-    client = get_groq_client()
+    hf_pipe = get_hf_pipeline()
     now = time.time()
 
-    # Determine whether to execute Groq Vision:
+    # Determine whether to execute HF Vision:
     # 1. Always for static image uploads
-    # 2. For live camera frames: throttled to once every 1.5 seconds to respect rate limits
-    should_call_groq = client is not None and (is_static_upload or (now - _last_groq_frame_time >= 1.5))
+    # 2. For live camera frames: throttled to once every 1.5 seconds
+    should_call_hf = hf_pipe is not None and (is_static_upload or (now - _last_hf_frame_time >= 1.5))
 
-    if should_call_groq and client is not None:
+    if should_call_hf and hf_pipe is not None:
         try:
-            # Scale frame for instant transfer and inference
-            target_dim = (384, 384) if is_static_upload else (256, 256)
-            scaled_img = cv2.resize(bgr_image, target_dim, interpolation=cv2.INTER_AREA)
-            base64_image = encode_bgr_to_base64_jpeg(scaled_img, quality=75)
+            # Prepare image for HF pipeline
+            rgb_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
+            
+            # If a face is detected, passing the face crop often gives better results for FER models.
+            fx, fy, fw, fh = detected_bbox
+            if fw > 0 and fh > 0:
+                face_crop = rgb_image[max(0, fy):min(orig_h, fy+fh), max(0, fx):min(orig_w, fx+fw)]
+            else:
+                face_crop = rgb_image
+                
+            pil_image = Image.fromarray(face_crop)
 
-            prompt = (
-                "You are an expert Facial Emotion Recognition (FER) specialist utilizing Paul Ekman's FACS.\n"
-                "Classify the dominant facial emotion into exactly ONE of: angry, disgust, fear, happy, neutral, sad, surprise.\n"
-                "Differentiate carefully between an angry scowl vs a happy smile vs sad downturned lips vs surprise open mouth.\n"
-                "Return JSON ONLY in this format:\n"
-                '{"emotion": "happy", "confidence": 0.95, "all_probs": {"angry": 0.01, "disgust": 0.01, "fear": 0.01, "happy": 0.95, "neutral": 0.01, "sad": 0.01, "surprise": 0.0}}'
-            )
+            predictions = hf_pipe(pil_image)
+            _last_hf_frame_time = now
+            
+            # Format predictions
+            parsed_json = {"all_probs": {}}
+            for pred in predictions:
+                label = pred['label'].lower()
+                parsed_json["all_probs"][label] = pred['score']
+            
+            if predictions:
+                parsed_json["emotion"] = predictions[0]['label'].lower()
+                parsed_json["confidence"] = predictions[0]['score']
 
-            response = client.chat.completions.create(
-                model=PRIMARY_MODEL,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=300,
-                temperature=0.1
-            )
-            _last_groq_frame_time = now
-            response_text = response.choices[0].message.content or "{}"
-            parsed_json = extract_json_from_llm_output(response_text)
             normalized = normalize_emotion_response(parsed_json, (orig_h, orig_w), default_bbox=detected_bbox)
             _last_cached_frame_result = normalized
             return normalized
         except Exception as err:
-            print(f"[Groq Vision] Error during inference ({err}). Using geometric telemetry fallback.")
+            print(f"[HF Vision] Error during inference ({err}). Using geometric telemetry fallback.")
 
-    # Return cached Groq result with updated bounding box if recent, or real-time CV result
-    if _last_cached_frame_result and (now - _last_groq_frame_time < 3.0):
+    # Return cached HF result with updated bounding box if recent, or real-time CV result
+    if _last_cached_frame_result and (now - _last_hf_frame_time < 3.0):
         res = dict(_last_cached_frame_result)
         res["bbox"] = detected_bbox
         return res
