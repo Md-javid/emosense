@@ -267,15 +267,15 @@ export const LiveEmotion: React.FC = () => {
       canvasRef.current = document.createElement('canvas');
     }
     const canvas = canvasRef.current;
-    // Scale down frame to 320x240 for instant low-latency transmission (~15KB per frame)
-    canvas.width = 320;
-    canvas.height = 240;
+    // Scale to 480x360 with 0.82 quality for high-fidelity facial landmark and smile detection
+    canvas.width = 480;
+    canvas.height = 360;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    ctx.drawImage(video, 0, 0, 320, 240);
-    const base64Frame = canvas.toDataURL('image/jpeg', 0.65);
+    ctx.drawImage(video, 0, 0, 480, 360);
+    const base64Frame = canvas.toDataURL('image/jpeg', 0.82);
 
     const socket = getSocket();
     if (socket && socket.connected) {
