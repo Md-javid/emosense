@@ -1,5 +1,6 @@
 import os
 import traceback
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,14 +8,25 @@ from typing import Dict, Any, List, Optional
 from dotenv import load_dotenv
 
 from .utils import read_upload_image, decode_base64_image
-from .emotion_model import predict_emotion, EMOTION_LABELS
+from .emotion_model import predict_emotion, get_hf_pipeline, EMOTION_LABELS
 
 load_dotenv()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("[EmoSense AI] Preloading Hugging Face Vision Transformer model...")
+    try:
+        get_hf_pipeline()
+        print("[EmoSense AI] Model loaded successfully and ready for inference.")
+    except Exception as e:
+        print(f"[EmoSense AI] Startup preload warning: {e}")
+    yield
 
 app = FastAPI(
     title="EmoSense AI Microservice",
     description="Facial Emotion Recognition microservice powered by Hugging Face Vision AI",
-    version="2.0.0"
+    version="2.0.0",
+    lifespan=lifespan
 )
 
 # Enable CORS for local backend & frontend
@@ -83,8 +95,6 @@ def predict_frame(request: FramePredictionRequest):
             }
         image = decode_base64_image(request.image_base64)
         result = predict_emotion(image)
-        if result["emotion"] == "neutral" and result["confidence"] == 0.0:
-            result["emotion"] = "no_face"
         return result
     except Exception as e:
         traceback.print_exc()

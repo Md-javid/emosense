@@ -18,14 +18,11 @@ EMOTION_LABELS = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surpri
 PRIMARY_MODEL = "trpakov/vit-face-expression"
 
 _hf_pipeline = None
-_last_hf_frame_time: float = 0.0
-_last_cached_frame_result: Optional[Dict[str, Any]] = None
 
-# Initialize robust Haar Cascades for real-time facial expression telemetry
+# Initialize robust Haar Cascades for face tracking
 _face_cascade_alt = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_alt2.xml')
 _face_cascade_default = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
 _smile_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
-_eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
 
 def get_hf_pipeline():
     """
@@ -34,9 +31,11 @@ def get_hf_pipeline():
     global _hf_pipeline
     if _hf_pipeline is None:
         try:
+            print(f"[Hugging Face] Loading Vision Transformer model ({PRIMARY_MODEL})...")
             _hf_pipeline = pipeline("image-classification", model=PRIMARY_MODEL)
+            print("[Hugging Face] Model loaded successfully.")
         except Exception as e:
-            print(f"Error loading model {PRIMARY_MODEL}: {e}")
+            print(f"[Hugging Face] Error loading model {PRIMARY_MODEL}: {e}")
     return _hf_pipeline
 
 
@@ -55,14 +54,10 @@ def detect_face_bbox(gray: np.ndarray, img_w: int, img_h: int) -> tuple:
     
     return int(img_w * 0.15), int(img_h * 0.15), int(img_w * 0.7), int(img_h * 0.7)
 
+
 def analyze_opencv_facial_affect(bgr_image: np.ndarray) -> Dict[str, Any]:
     """
-    Calibrated Facial Geometry & Dynamic Affect Engine.
-    Computes real facial morphology and action units:
-    - AU12 / Smile curvature (mouth corners vs center elevation)
-    - AU25/26 / Oral aperture (mouth aspect ratio and opening)
-    - AU4 / Glabella furrow & brow lowering (anger / intense focus)
-    - AU1 / Inner eyebrow lift (sadness / distress)
+    Calibrated Facial Geometry & Dynamic Affect Fallback Engine.
     """
     if bgr_image is None or bgr_image.size == 0:
         return {
@@ -96,14 +91,13 @@ def analyze_opencv_facial_affect(bgr_image: np.ndarray) -> Dict[str, Any]:
     right_corner_zone = mouth_roi[5:35, 52:75]
     center_lip_zone = mouth_roi[5:35, 28:52]
 
-    # Smile curvature: difference in vertical centroid between lip corners and center
     left_y_min = np.argmin(np.mean(left_corner_zone, axis=1)) if left_corner_zone.size > 0 else 15
     right_y_min = np.argmin(np.mean(right_corner_zone, axis=1)) if right_corner_zone.size > 0 else 15
     center_y_min = np.argmin(np.mean(center_lip_zone, axis=1)) if center_lip_zone.size > 0 else 15
     corner_y_avg = (left_y_min + right_y_min) / 2.0
     smile_lift = float(center_y_min - corner_y_avg)
 
-    # Mouth opening aspect ratio (AU25/AU26)
+    # Mouth opening aspect ratio
     mouth_bin = cv2.threshold(mouth_roi, 70, 255, cv2.THRESH_BINARY_INV)[1]
     mouth_v_proj = np.sum(mouth_bin > 0, axis=1)
     mouth_open_height = np.sum(mouth_v_proj > (mouth_roi.shape[1] * 0.15))
@@ -116,39 +110,34 @@ def analyze_opencv_facial_affect(bgr_image: np.ndarray) -> Dict[str, Any]:
     smiles = _smile_cascade.detectMultiScale(lower_face, scaleFactor=1.15, minNeighbors=3, minSize=(18, 18))
     smile_detected = len(smiles) > 0
 
-    # Continuous Affect Scoring
     scores: Dict[str, float] = {
-        "happy": 0.05,
-        "sad": 0.05,
-        "angry": 0.05,
-        "surprise": 0.05,
-        "fear": 0.04,
-        "disgust": 0.04,
-        "neutral": 0.20
+        "happy": 0.10,
+        "sad": 0.10,
+        "angry": 0.10,
+        "surprise": 0.10,
+        "fear": 0.08,
+        "disgust": 0.08,
+        "neutral": 0.35
     }
 
-    if smile_detected or smile_lift > 1.2 or (mouth_open_width > 42 and smile_lift >= 0):
-        intensity = 1.0 + max(0.0, smile_lift * 0.4) + (0.9 if smile_detected else 0.0)
-        scores["happy"] += 3.2 * intensity
-        scores["neutral"] = max(0.02, scores["neutral"] - 0.15)
-    elif mouth_aspect_ratio > 0.45 or mouth_open_height > 18:
-        intensity = (mouth_aspect_ratio * 2.2)
-        scores["surprise"] += 3.0 * intensity
-        scores["fear"] += 0.6 * intensity
-        scores["neutral"] = max(0.02, scores["neutral"] - 0.15)
-    elif glabella_grad > 15.0:
-        intensity = (glabella_grad / 10.0)
-        scores["angry"] += 2.8 * intensity
-        scores["disgust"] += 0.5 * intensity
-        scores["neutral"] = max(0.02, scores["neutral"] - 0.15)
-    elif smile_lift < -1.2 and mouth_aspect_ratio < 0.35:
-        intensity = max(0.0, -smile_lift * 0.4)
-        scores["sad"] += 2.6 * intensity
-        scores["neutral"] = max(0.02, scores["neutral"] - 0.15)
-    else:
-        # Balanced resting neutral expression
-        scores["neutral"] = 1.6
-        scores["happy"] += max(0.0, smile_lift * 0.1)
+    if smile_detected or smile_lift > 1.0 or (mouth_open_width > 40 and smile_lift >= 0):
+        intensity = 1.0 + max(0.0, smile_lift * 0.5) + (1.2 if smile_detected else 0.0)
+        scores["happy"] += 4.0 * intensity
+        scores["neutral"] = 0.05
+    elif mouth_aspect_ratio > 0.40 or mouth_open_height > 16:
+        intensity = (mouth_aspect_ratio * 2.5)
+        scores["surprise"] += 3.5 * intensity
+        scores["fear"] += 0.8 * intensity
+        scores["neutral"] = 0.05
+    elif glabella_grad > 14.0:
+        intensity = (glabella_grad / 9.0)
+        scores["angry"] += 3.2 * intensity
+        scores["disgust"] += 0.6 * intensity
+        scores["neutral"] = 0.05
+    elif smile_lift < -1.0 and mouth_aspect_ratio < 0.35:
+        intensity = max(0.0, -smile_lift * 0.5)
+        scores["sad"] += 3.0 * intensity
+        scores["neutral"] = 0.05
 
     max_label = max(scores, key=lambda k: scores[k])
     exp_scores = {k: np.exp(v * 1.5) for k, v in scores.items()}
@@ -163,6 +152,7 @@ def analyze_opencv_facial_affect(bgr_image: np.ndarray) -> Dict[str, Any]:
         "all_probs": sorted_probs,
         "bbox": [fx, fy, fw, fh]
     }
+
 
 def normalize_emotion_response(
     raw_data: Dict[str, Any],
@@ -180,10 +170,10 @@ def normalize_emotion_response(
     
     try:
         raw_conf = raw_data.get("confidence", 0.0)
-        confidence = float(raw_conf) if raw_conf is not None else 0.90
-        confidence = max(0.50, min(0.99, confidence))
+        confidence = float(raw_conf) if raw_conf is not None else 0.85
+        confidence = max(0.40, min(0.99, confidence))
     except (ValueError, TypeError):
-        confidence = 0.90
+        confidence = 0.85
 
     raw_probs = raw_data.get("all_probs", {})
     all_probs: Dict[str, float] = {}
@@ -229,14 +219,12 @@ def normalize_emotion_response(
         "bbox": bbox
     }
 
+
 def predict_emotion(bgr_image: np.ndarray, is_static_upload: bool = False) -> Dict[str, Any]:
     """
-    Affective Telemetry Engine:
-    - For Static Uploads: runs Hugging Face Vision classification.
-    - For Live Stream: runs adaptive Hugging Face Vision sampling with high-speed geometric fallback.
+    Direct Vision Transformer Affective Inference:
+    Executes Hugging Face ViT model on every frame / image, with facial crop enhancement.
     """
-    global _last_hf_frame_time, _last_cached_frame_result
-
     if bgr_image is None or bgr_image.size == 0:
         return {
             "emotion": "no_face",
@@ -246,59 +234,45 @@ def predict_emotion(bgr_image: np.ndarray, is_static_upload: bool = False) -> Di
         }
 
     orig_h, orig_w = bgr_image.shape[:2]
+    gray = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2GRAY)
+    detected_bbox = detect_face_bbox(gray, orig_w, orig_h)
     
-    # Fast facial geometry & bounding box calculation
-    cv_result = analyze_opencv_facial_affect(bgr_image)
-    detected_bbox = cv_result["bbox"]
-
     hf_pipe = get_hf_pipeline()
-    now = time.time()
-
-    # Determine whether to execute HF Vision:
-    # 1. Always for static image uploads
-    # 2. For live camera frames: throttled to once every 1.5 seconds
-    should_call_hf = hf_pipe is not None and (is_static_upload or (now - _last_hf_frame_time >= 1.5))
-
-    if should_call_hf and hf_pipe is not None:
+    if hf_pipe is not None:
         try:
-            # Prepare image for HF pipeline
             rgb_image = cv2.cvtColor(bgr_image, cv2.COLOR_BGR2RGB)
-            
-            # If a face is detected, passing the face crop often gives better results for FER models.
             fx, fy, fw, fh = detected_bbox
-            if fw > 0 and fh > 0:
-                face_crop = rgb_image[max(0, fy):min(orig_h, fy+fh), max(0, fx):min(orig_w, fx+fw)]
-            else:
+            
+            # Crop with padding for optimal Vision Transformer classification
+            pad_w = int(fw * 0.12)
+            pad_h = int(fh * 0.12)
+            x1 = max(0, fx - pad_w)
+            y1 = max(0, fy - pad_h)
+            x2 = min(orig_w, fx + fw + pad_w)
+            y2 = min(orig_h, fy + fh + pad_h)
+            
+            face_crop = rgb_image[y1:y2, x1:x2]
+            if face_crop.size == 0 or face_crop.shape[0] < 10 or face_crop.shape[1] < 10:
                 face_crop = rgb_image
                 
             pil_image = Image.fromarray(face_crop)
-
             predictions = hf_pipe(pil_image)
-            _last_hf_frame_time = now
             
-            # Format predictions
             parsed_json = {"all_probs": {}}
             for pred in predictions:
                 label = pred['label'].lower()
-                parsed_json["all_probs"][label] = pred['score']
+                parsed_json["all_probs"][label] = float(pred['score'])
             
             if predictions:
                 parsed_json["emotion"] = predictions[0]['label'].lower()
-                parsed_json["confidence"] = predictions[0]['score']
+                parsed_json["confidence"] = float(predictions[0]['score'])
 
-            normalized = normalize_emotion_response(parsed_json, (orig_h, orig_w), default_bbox=detected_bbox)
-            _last_cached_frame_result = normalized
-            return normalized
+            return normalize_emotion_response(parsed_json, (orig_h, orig_w), default_bbox=list(detected_bbox))
         except Exception as err:
-            print(f"[HF Vision] Error during inference ({err}). Using geometric telemetry fallback.")
+            print(f"[Hugging Face Vision] Inference error ({err}). Using facial geometry fallback.")
 
-    # Return cached HF result with updated bounding box if recent, or real-time CV result
-    if _last_cached_frame_result and (now - _last_hf_frame_time < 3.0):
-        res = dict(_last_cached_frame_result)
-        res["bbox"] = detected_bbox
-        return res
+    return analyze_opencv_facial_affect(bgr_image)
 
-    return cv_result
 
 def predict_emotion_from_path(image_path: str, is_static_upload: bool = True) -> Dict[str, Any]:
     """
@@ -310,4 +284,3 @@ def predict_emotion_from_path(image_path: str, is_static_upload: bool = True) ->
     if bgr_image is None:
         raise ValueError(f"Could not read image at {image_path}")
     return predict_emotion(bgr_image, is_static_upload=is_static_upload)
-
